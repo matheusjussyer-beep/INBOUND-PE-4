@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPX Express | Dashboard Executivo de Previsão de Carregamento</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #F4F5F7; color: #1E293B; }
+    .spx-orange { background-color: #EE4D2D; }
+    .spx-orange-text { color: #EE4D2D; }
+    .spx-orange-border { border-color: #EE4D2D; }
+    .spx-gradient { background: linear-gradient(135deg, #EE4D2D 0%, #FF7337 100%); }
+    .card { background: #FFFFFF; border-radius: 14px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); border: 1px solid #E2E8F0; }
+    .presentation-mode .no-print-pres { display: none !important; }
+    .presentation-mode { background-color: #0F172A; color: #F8FAFC; }
+    .presentation-mode .card { background: #1E293B; border-color: #334155; color: #F8FAFC; }
+    .presentation-mode .text-slate-800, .presentation-mode .text-slate-900 { color: #F8FAFC !important; }
+    .presentation-mode .text-slate-500, .presentation-mode .text-slate-600 { color: #94A3B8 !important; }
+    .presentation-mode thead { background-color: #0F172A !important; color: #E2E8F0 !important; }
+    .presentation-mode tbody tr:hover { background-color: #334155 !important; }
+    .presentation-mode .border-slate-200, .presentation-mode .border-slate-100 { border-color: #334155 !important; }
+    .presentation-mode tr.row-received { background-color: rgba(16, 185, 129, 0.12) !important; }
+    .presentation-mode tr.row-delayed { background-color: rgba(239, 68, 68, 0.14) !important; }
+    tr.row-received { background-color: #ECFDF5; }
+    tr.row-delayed { background-color: #FEF2F2; }
+    @media print {
+      .no-print-pres, .no-print { display: none !important; }
+      body { background: #FFFFFF !important; }
+      .card { box-shadow: none !important; border: 1px solid #CBD5E1 !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen transition-colors duration-200">
+
+  <!-- Top Header -->
+  <header class="spx-gradient text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="bg-white text-[#EE4D2D] font-extrabold px-3 py-1.5 rounded-lg text-lg tracking-tight shadow-sm">
+          SPX
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-bold tracking-tight">Previsão de Carregamento & Recebimento — SoC_PE_Recife_04</h1>
+          <p class="text-xs sm:text-sm text-orange-100" id="headerSubtitle">Painel Executivo Diretoria • Classificação LMH vs. Transbordo</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="openDelayedModal()" class="bg-red-700 hover:bg-red-800 text-white text-xs sm:text-sm font-bold px-3.5 py-2 rounded-lg shadow-sm transition flex items-center gap-1.5 border border-red-400/40 no-print-pres">
+          🚨 + Incluir LT Atrasada
+        </button>
+        <button onclick="togglePresentation()" id="btnPres" class="bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-semibold px-3.5 py-2 rounded-lg backdrop-blur-sm transition flex items-center gap-1.5 border border-white/25">
+          <span id="presIcon">🖥️</span> <span id="presLabel">Modo Apresentação</span>
+        </button>
+        <button onclick="copyWhatsApp()" class="bg-white/15 hover:bg-white/25 text-white text-xs sm:text-sm font-semibold px-3.5 py-2 rounded-lg backdrop-blur-sm transition flex items-center gap-1.5 border border-white/25 no-print-pres">
+          📋 Copiar Resumo
+        </button>
+        <button onclick="window.print()" class="bg-white text-[#EE4D2D] hover:bg-orange-50 text-xs sm:text-sm font-bold px-3.5 py-2 rounded-lg shadow-sm transition flex items-center gap-1.5 no-print-pres">
+          🖨️ PDF / Imprimir
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Slide Navigation Bar (Only visible in Presentation Mode) -->
+  <div id="slideNav" class="hidden bg-slate-800 border-b border-slate-700 py-2.5 px-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <button onclick="setSlide(1)" id="tabSlide1" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#EE4D2D] text-white">Slide 1: Visão Executiva & Gráficos</button>
+        <button onclick="setSlide(2)" id="tabSlide2" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600">Slide 2: Cronograma Detalhado por LT</button>
+        <button onclick="setSlide(0)" id="tabSlide0" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600">Visão Completa</button>
+      </div>
+      <div class="text-xs text-slate-400 hidden sm:block">Use as setas <kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">←</kbd> <kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">→</kbd> do teclado para navegar</div>
+    </div>
+  </div>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Upload, Quick Manual Add & Filter Controls -->
+    <section class="card p-5 no-print-pres" id="controlPanel">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+        <!-- Dropzone -->
+        <div class="lg:col-span-4">
+          <label id="dropZone" for="fileInput" class="flex flex-col items-center justify-center border-2 border-dashed border-orange-300 hover:border-[#EE4D2D] bg-orange-50/50 hover:bg-orange-50 rounded-xl p-4 cursor-pointer transition text-center">
+            <div class="text-2xl mb-1">📂</div>
+            <p class="text-sm font-bold text-slate-800">Arraste o arquivo exportado (.CSV ou .XLSX)</p>
+            <p class="text-xs text-slate-500 mt-0.5">Ex: <code class="bg-white px-1.5 py-0.5 rounded border text-slate-700">lh_trip_br_cost_20261120.csv</code></p>
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden" />
+          </label>
+        </div>
+
+        <!-- Filters -->
+        <div class="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Início da Janela (Chegada Prevista)</label>
+            <input type="datetime-local" id="startWindow" value="2026-11-19T22:00" onchange="applyFilters()" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Fim da Janela (Chegada Prevista)</label>
+            <input type="datetime-local" id="endWindow" value="2026-11-20T06:00" onchange="applyFilters()" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Estação Destino (Filtro)</label>
+            <input type="text" id="destFilter" value="Recife" onkeyup="applyFilters()" placeholder="Ex: Recife" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Origens Transbordo (separadas por vírgula)</label>
+            <input type="text" id="transbordoKeywords" value="SP-8, RJ-2, São Bernardo, Nova Friburgo" onkeyup="applyFilters()" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Inline Quick Add Delayed LT Bar -->
+      <div class="mt-4 pt-4 border-t border-slate-100 bg-red-50/60 border border-red-200/80 rounded-xl p-3.5">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[160px]">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">🚨 Incluir LT Atrasada (Código LT)</label>
+            <input type="text" id="quickDelayedLT" placeholder="Ex: LT0QBH02MP9X1" class="w-full text-sm font-mono uppercase border border-red-300 bg-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-red-600" />
+          </div>
+          <div class="w-36">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">Volumetria (Pedidos)</label>
+            <input type="number" id="quickDelayedOrders" min="1" placeholder="Ex: 6500" class="w-full text-sm font-bold border border-red-300 bg-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-red-600" />
+          </div>
+          <div class="w-36">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Modalidade</label>
+            <select id="quickDelayedCategory" class="w-full text-sm font-semibold border border-slate-300 bg-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-red-600">
+              <option value="LMH">LMH</option>
+              <option value="TRANSBORDO">Transbordo</option>
+            </select>
+          </div>
+          <div class="w-40">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Previsão Chegada</label>
+            <input type="time" id="quickDelayedTime" value="00:00" class="w-full text-sm border border-slate-300 bg-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-red-600" />
+          </div>
+          <div class="flex-1 min-w-[160px]">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Origem / Motivo (Opcional)</label>
+            <input type="text" id="quickDelayedOrigin" placeholder="Ex: Atraso Janela Anterior" class="w-full text-sm border border-slate-300 bg-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-red-600" />
+          </div>
+          <div>
+            <button onclick="addQuickDelayedLT()" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-1.5 rounded-lg shadow-sm transition whitespace-nowrap">
+              + Adicionar LT
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+        <div id="fileStatus">✅ Base carregada com dados padrão de exemplo (19/11 22:00 a 20/11 06:00 — 12 LTs). Envie um novo CSV/XLSX acima para atualizar.</div>
+        <div class="flex items-center gap-3">
+          <button onclick="clearManualDelayed()" class="text-red-600 font-semibold hover:underline">Limpar LTs Atrasadas Manuais</button>
+          <button onclick="clearAllReceived()" class="text-slate-600 font-semibold hover:text-red-600 hover:underline">Limpar Recebidos</button>
+          <button onclick="loadSampleData()" class="text-[#EE4D2D] font-semibold hover:underline">Restaurar Exemplo (20/11)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 1: KPIs & Charts -->
+    <div id="slide1Container" class="space-y-6">
+      <!-- KPI Cards -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div class="card p-4 border-l-4 border-l-[#EE4D2D]">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Geral Previsto</span>
+            <span class="text-base">📦</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-slate-900" id="kpiTotalOrders">83.157</span>
+            <span class="text-xs font-semibold text-slate-500">ped.</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1"><span id="kpiTotalLTs" class="font-bold text-slate-700">12</span> LTs • <span id="kpiTotalTOs" class="font-bold text-slate-700">1.448</span> TOs</p>
+        </div>
+
+        <div class="card p-4 border-l-4 border-l-emerald-500">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-600">Já Recebidos</span>
+            <span class="text-base">✅</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-emerald-700" id="kpiRecOrders">0</span>
+            <span class="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full" id="kpiRecPct">0,0%</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1"><span id="kpiRecLTs" class="font-bold text-slate-700">0</span>/<span id="kpiRecTotalLTs">12</span> LTs • Pend: <span id="kpiPendOrders" class="font-bold text-slate-700">83.157</span></p>
+        </div>
+
+        <div class="card p-4 border-l-4 border-l-red-600">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-red-600">LTs Atrasadas</span>
+            <span class="text-base">🚨</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-red-600" id="kpiDelayedOrders">0</span>
+            <span class="text-[11px] font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full" id="kpiDelayedPct">0,0%</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1"><span id="kpiDelayedLTs" class="font-bold text-slate-700">0</span> LT(s) incluídas manualmente</p>
+        </div>
+
+        <div class="card p-4 border-l-4 border-l-blue-600">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-blue-600">Operação LMH</span>
+            <span class="text-base">🚛</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-slate-900" id="kpiLmhOrders">58.762</span>
+            <span class="text-[11px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full" id="kpiLmhPct">70,7%</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1"><span id="kpiLmhLTs" class="font-bold text-slate-700">10</span> LTs • <span id="kpiLmhRecInfo" class="font-semibold text-emerald-600">0 rec.</span></p>
+        </div>
+
+        <div class="card p-4 border-l-4 border-l-amber-500">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-amber-600">Transbordo</span>
+            <span class="text-base">🔄</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-slate-900" id="kpiTransOrders">24.395</span>
+            <span class="text-[11px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full" id="kpiTransPct">29,3%</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1"><span id="kpiTransLTs" class="font-bold text-slate-700">2</span> LTs • <span id="kpiTransRecInfo" class="font-semibold text-emerald-600">0 rec.</span></p>
+        </div>
+
+        <div class="card p-4 border-l-4 border-l-purple-600">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-purple-600">Média & Pico</span>
+            <span class="text-base">📊</span>
+          </div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span class="text-2xl font-extrabold text-slate-900" id="kpiAvgOrders">6.930</span>
+            <span class="text-xs font-semibold text-slate-500">ped/LT</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">Pico: <span id="kpiPeakHour" class="font-bold text-purple-700">23:00 (24.264)</span></p>
+        </div>
+      </section>
+
+      <!-- Progress Bar Banner -->
+      <section class="card p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Progresso de Recebimento da Janela</span>
+            <span id="progressBadge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">0% concluído</span>
+          </div>
+          <div class="text-xs text-slate-500 flex flex-wrap gap-4">
+            <span>✅ Recebido: <strong class="text-emerald-600" id="barRecText">0 ped. (0 LTs)</strong></span>
+            <span>🚨 Atrasadas: <strong class="text-red-600" id="barDelayedText">0 ped. (0 LTs)</strong></span>
+            <span>⏳ Pendente: <strong class="text-[#EE4D2D]" id="barPendText">83.157 ped. (12 LTs)</strong></span>
+          </div>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+          <div id="progressBarFill" class="bg-emerald-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </section>
+
+      <!-- Charts Row -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="card p-5 lg:col-span-8">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-base font-bold text-slate-800">Curva de Chegada por Horário (Recebido vs. Pendente vs. Atrasadas)</h2>
+              <p class="text-xs text-slate-500">Volume líquido de pedidos por janela prevista</p>
+            </div>
+          </div>
+          <div class="h-64">
+            <canvas id="hourlyChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card p-5 lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <h2 class="text-base font-bold text-slate-800">Status de Recebimento & Mix</h2>
+            <p class="text-xs text-slate-500">Proporção Recebido vs. Pendente vs. Atrasadas</p>
+          </div>
+          <div class="h-48 my-2 flex items-center justify-center">
+            <canvas id="mixChart"></canvas>
+          </div>
+          <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+            <div class="bg-emerald-50/80 p-2 rounded-lg">
+              <span class="text-emerald-700 font-bold block">RECEBIDO</span>
+              <span class="text-slate-700 font-semibold" id="legendRec">0 ped.</span>
+            </div>
+            <div class="bg-red-50/80 p-2 rounded-lg">
+              <span class="text-red-700 font-bold block">ATRASADAS (PEND.)</span>
+              <span class="text-slate-700 font-semibold" id="legendDelayed">0 ped.</span>
+            </div>
+            <div class="bg-blue-50/70 p-2 rounded-lg">
+              <span class="text-blue-700 font-bold block">LMH (NO PRAZO)</span>
+              <span class="text-slate-700 font-semibold" id="legendLmh">58.762 ped.</span>
+            </div>
+            <div class="bg-amber-50/70 p-2 rounded-lg">
+              <span class="text-amber-700 font-bold block">TRANSB. (NO PRAZO)</span>
+              <span class="text-slate-700 font-semibold" id="legendTrans">24.395 ped.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- SLIDE 2: Detailed Table -->
+    <div id="slide2Container">
+      <section class="card overflow-hidden">
+        <div class="p-5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-slate-800">Cronograma de Chegada Ordenado por Horário</h2>
+            <p class="text-xs text-slate-500">Inclui LTs regulares do arquivo e LTs atrasadas adicionadas manualmente</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 no-print-pres">
+            <!-- Bulk Action Bar -->
+            <div id="bulkActionBar" class="hidden items-center gap-1.5 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-lg">
+              <span class="text-xs font-bold text-[#EE4D2D]" id="selectedCountLabel">0 selecionadas</span>
+              <button onclick="bulkMarkReceived(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1 rounded transition">
+                ✓ Marcar Recebidas
+              </button>
+              <button onclick="bulkMarkReceived(false)" class="bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold px-2.5 py-1 rounded transition">
+                ↺ Voltar Pendente
+              </button>
+            </div>
+
+            <select id="statusFilter" onchange="applyFilters()" class="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-[#EE4D2D]">
+              <option value="ALL">Todos os Status</option>
+              <option value="PENDING">Apenas Pendentes</option>
+              <option value="RECEIVED">Apenas Recebidas</option>
+              <option value="DELAYED">Apenas Atrasadas (Manuais)</option>
+            </select>
+
+            <select id="typeFilter" onchange="applyFilters()" class="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-[#EE4D2D]">
+              <option value="ALL">Todas as Modalidades</option>
+              <option value="LMH">Apenas LMH</option>
+              <option value="TRANSBORDO">Apenas Transbordo</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                <th class="py-3 px-3 text-center w-10 no-print-pres">
+                  <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)" class="w-4 h-4 accent-[#EE4D2D] rounded cursor-pointer" title="Selecionar todas visíveis" />
+                </th>
+                <th class="py-3 px-3 text-center">Recebimento</th>
+                <th class="py-3 px-4">Horário Previsto</th>
+                <th class="py-3 px-4">Número do LH (LT)</th>
+                <th class="py-3 px-4">Origem</th>
+                <th class="py-3 px-4 text-center">Modalidade</th>
+                <th class="py-3 px-4 text-right">TOs Pend.</th>
+                <th class="py-3 px-4 text-right">Pedidos Carregados</th>
+                <th class="py-3 px-4">Observação Operacional</th>
+                <th class="py-3 px-2 text-center no-print-pres">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="ltTableBody" class="divide-y divide-slate-100 text-sm">
+              <!-- Populated by JS -->
+            </tbody>
+            <tfoot class="bg-slate-100/80 font-bold text-sm border-t-2 border-slate-300 text-slate-800">
+              <tr>
+                <td class="no-print-pres"></td>
+                <td colspan="5" class="py-3 px-4 text-right uppercase text-xs tracking-wider">Total Consolidado na Seleção:</td>
+                <td class="py-3 px-4 text-right" id="footTOs">1.448</td>
+                <td class="py-3 px-4 text-right text-[#EE4D2D] text-base" id="footOrders">83.157</td>
+                <td colspan="2" class="py-3 px-4 text-xs text-slate-500 font-normal" id="footSummary">Recebido: 0 | Pendente: 83.157</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- Modal for Adding Delayed LT (Also accessible from Header) -->
+  <div id="delayedModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🚨</span>
+          <h3 class="text-base font-bold text-slate-900">Incluir LT Atrasada (Manual)</h3>
+        </div>
+        <button onclick="closeDelayedModal()" class="text-slate-400 hover:text-slate-700 font-bold text-lg">✕</button>
+      </div>
+      <div class="space-y-3.5 mt-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Número do LH (Código LT) *</label>
+          <input type="text" id="modalDelayedLT" placeholder="Ex: LT0QBH02MP9X1" class="w-full text-sm font-mono uppercase border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Volumetria (Pedidos) *</label>
+            <input type="number" id="modalDelayedOrders" min="1" placeholder="Ex: 7450" class="w-full text-sm font-bold border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Qtd. TOs (Opcional)</label>
+            <input type="number" id="modalDelayedTOs" min="0" placeholder="Ex: 110" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Modalidade</label>
+            <select id="modalDelayedCategory" class="w-full text-sm font-semibold border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-[#EE4D2D]">
+              <option value="LMH">LMH</option>
+              <option value="TRANSBORDO">Transbordo</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Previsão de Chegada</label>
+            <input type="datetime-local" id="modalDelayedDateTime" class="w-full text-sm border border-slate-300 rounded-lg px-2.5 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Origem / Observação do Atraso</label>
+          <input type="text" id="modalDelayedOrigin" placeholder="Ex: SoC_SP_Guarulhos — Atraso janela anterior" class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#EE4D2D]" />
+        </div>
+      </div>
+      <div class="mt-6 flex items-center justify-end gap-2">
+        <button onclick="closeDelayedModal()" class="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition">Cancelar</button>
+        <button onclick="saveModalDelayedLT()" class="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-sm transition">+ Adicionar ao Painel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+    Ação concluída!
+  </div>
+
+  <script>
+    let baseTrips = [];
+    let filteredTrips = [];
+    let hourlyChartInstance = null;
+    let mixChartInstance = null;
+    let isPresentation = false;
+    let currentSlide = 0;
+
+    // Persistent states in localStorage
+    const STORAGE_KEY_RECEIVED = 'spx_recife_received_lts_v2';
+    const STORAGE_KEY_DELAYED = 'spx_recife_manual_delayed_lts_v1';
+
+    let receivedLTs = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_RECEIVED) || '[]'));
+    let manualDelayedTrips = JSON.parse(localStorage.getItem(STORAGE_KEY_DELAYED) || '[]');
+    let selectedLTs = new Set();
+
+    function saveReceivedState() {
+      localStorage.setItem(STORAGE_KEY_RECEIVED, JSON.stringify(Array.from(receivedLTs)));
+    }
+
+    function saveDelayedState() {
+      localStorage.setItem(STORAGE_KEY_DELAYED, JSON.stringify(manualDelayedTrips));
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+    }
+
+    // Sample data matching lh_trip_br_cost_20261120.csv
+    const defaultData = [
+      { lt: 'LT0QBI02MPBK1', origin: 'SoC_MG_Betim', schedTime: '2026-11-19T23:00', schedStr: '19/11/2026 23:00', tos: 101, orders: 4525, status: 'Em trânsito' },
+      { lt: 'LT0QBH02MP6B1', origin: 'FM Hub_SP_Franca_Dst Ind Antonio', schedTime: '2026-11-19T23:00', schedStr: '19/11/2026 23:00', tos: 28, orders: 10029, status: 'Em trânsito' },
+      { lt: 'LT1QBI02N0BB1', origin: 'SoC_SP_Guarulhos', schedTime: '2026-11-19T23:00', schedStr: '19/11/2026 23:00', tos: 85, orders: 8322, status: 'Em trânsito' },
+      { lt: 'LT0QBI02MPBM2', origin: 'SoC_MG_Betim', schedTime: '2026-11-19T23:00', schedStr: '19/11/2026 23:00', tos: 28, orders: 1388, status: 'No pátio (Chegou 22:14)' },
+      { lt: 'LT0QBH02MPJD1', origin: 'SoC_SP_São Bernardo do Campo (SP-8)', schedTime: '2026-11-20T00:00', schedStr: '20/11/2026 00:00', tos: 432, orders: 15993, status: '144 bipados / 15.993 pendentes' },
+      { lt: 'LT0QBH02MPO51', origin: 'SoC_SP_Louveira', schedTime: '2026-11-20T00:30', schedStr: '20/11/2026 00:30', tos: 159, orders: 5820, status: 'Em trânsito' },
+      { lt: 'LT0QBJ02MO7M1', origin: 'SoC_BA_Simoes Filho', schedTime: '2026-11-20T02:00', schedStr: '20/11/2026 02:00', tos: 157, orders: 7552, status: 'Em trânsito' },
+      { lt: 'LT0QBH02MP6J1', origin: 'FM Hub_SP_Franca_Dst Ind Antonio', schedTime: '2026-11-20T02:00', schedStr: '20/11/2026 02:00', tos: 14, orders: 2944, status: 'Em trânsito' },
+      { lt: 'LT1QBH02N0NS1', origin: 'SoC_SP_Piracicaba_35', schedTime: '20/11/2026 02:00', schedStr: '20/11/2026 02:00', tos: 35, orders: 2056, status: 'Em trânsito' },
+      { lt: 'LT0QBH02MP8M1', origin: 'SoC_SP_Guarulhos', schedTime: '2026-11-20T04:00', schedStr: '20/11/2026 04:00', tos: 83, orders: 5595, status: 'Em trânsito' },
+      { lt: 'LT0QBI02MO3I1', origin: 'FM Hub_RJ_Nova Friburgo (RJ-2)', schedTime: '2026-11-20T05:00', schedStr: '20/11/2026 05:00', tos: 129, orders: 8402, status: 'Parada BA (12.978) + 8 bipados' },
+      { lt: 'LT0QBJ02MO8W1', origin: 'SoC_BA_Simoes Filho', schedTime: '2026-11-20T05:00', schedStr: '20/11/2026 05:00', tos: 237, orders: 10531, status: 'Em trânsito' }
+    ];
+
+    function isoToBRStr(isoStr) {
+      if (!isoStr || !isoStr.includes('T')) return isoStr;
+      const [d, t] = isoStr.split('T');
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y} ${t.slice(0, 5)}`;
+    }
+
+    function parseBRDateTime(str) {
+      if (!str || typeof str !== 'string') return null;
+      const clean = str.trim();
+      let m = clean.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
+      if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}`;
+      m = clean.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+      return null;
+    }
+
+    function parsePendingTO(inToStr, outToNum) {
+      if (inToStr && typeof inToStr === 'string' && inToStr.includes('/')) {
+        const parts = inToStr.replace(/'/g, '').split('/');
+        const done = parseInt(parts[0], 10) || 0;
+        const total = parseInt(parts[1], 10) || 0;
+        if (total > 0) return Math.max(0, total - done);
+      }
+      return outToNum || 0;
+    }
+
+    // Quick Add & Modal Add Delayed LT Functions
+    function buildSchedISOFromTime(timeStr) {
+      const startWin = document.getElementById('startWindow').value || '2026-11-19T22:00';
+      const endWin = document.getElementById('endWindow').value || '2026-11-20T06:00';
+      const startDate = startWin.split('T')[0];
+      const endDate = endWin.split('T')[0];
+      const startTime = startWin.split('T')[1] || '22:00';
+      const chosenDate = (timeStr < startTime && endDate > startDate) ? endDate : startDate;
+      return `${chosenDate}T${timeStr}`;
+    }
+
+    function addQuickDelayedLT() {
+      const ltCode = (document.getElementById('quickDelayedLT').value || '').trim().toUpperCase();
+      const ordersVal = parseInt(document.getElementById('quickDelayedOrders').value, 10);
+      const catVal = document.getElementById('quickDelayedCategory').value;
+      const timeVal = document.getElementById('quickDelayedTime').value || '00:00';
+      const origInput = (document.getElementById('quickDelayedOrigin').value || '').trim();
+
+      if (!ltCode) {
+        showToast('⚠️ Informe o código da LT atrasada.');
+        document.getElementById('quickDelayedLT').focus();
+        return;
+      }
+      if (!ordersVal || ordersVal <= 0) {
+        showToast('⚠️ Informe a volumetria (quantidade de pedidos) da LT.');
+        document.getElementById('quickDelayedOrders').focus();
+        return;
+      }
+
+      const schedISO = buildSchedISOFromTime(timeVal);
+      const originText = origInput || (catVal === 'TRANSBORDO' ? 'Transbordo (Inclusão Manual)' : 'Origem Externa (Inclusão Manual)');
+
+      upsertDelayedTrip({
+        lt: ltCode,
+        origin: originText,
+        schedTime: schedISO,
+        schedStr: isoToBRStr(schedISO),
+        tos: 0,
+        orders: ordersVal,
+        status: '🚨 LT Atrasada (Inclusão Manual)',
+        isDelayed: true,
+        forcedCategory: catVal
+      });
+
+      document.getElementById('quickDelayedLT').value = '';
+      document.getElementById('quickDelayedOrders').value = '';
+      document.getElementById('quickDelayedOrigin').value = '';
+    }
+
+    function openDelayedModal() {
+      const modal = document.getElementById('delayedModal');
+      const startWin = document.getElementById('startWindow').value || '2026-11-20T00:00';
+      document.getElementById('modalDelayedDateTime').value = startWin;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      document.getElementById('modalDelayedLT').focus();
+    }
+
+    function closeDelayedModal() {
+      const modal = document.getElementById('delayedModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveModalDelayedLT() {
+      const ltCode = (document.getElementById('modalDelayedLT').value || '').trim().toUpperCase();
+      const ordersVal = parseInt(document.getElementById('modalDelayedOrders').value, 10);
+      const tosVal = parseInt(document.getElementById('modalDelayedTOs').value, 10) || 0;
+      const catVal = document.getElementById('modalDelayedCategory').value;
+      const dtVal = document.getElementById('modalDelayedDateTime').value || document.getElementById('startWindow').value;
+      const origInput = (document.getElementById('modalDelayedOrigin').value || '').trim();
+
+      if (!ltCode || !ordersVal || ordersVal <= 0) {
+        showToast('⚠️ Preencha o código da LT e a volumetria de pedidos.');
+        return;
+      }
+
+      const originText = origInput || (catVal === 'TRANSBORDO' ? 'Transbordo (Inclusão Manual)' : 'Origem Externa (Inclusão Manual)');
+      upsertDelayedTrip({
+        lt: ltCode,
+        origin: originText,
+        schedTime: dtVal,
+        schedStr: isoToBRStr(dtVal),
+        tos: tosVal,
+        orders: ordersVal,
+        status: '🚨 LT Atrasada (Inclusão Manual)',
+        isDelayed: true,
+        forcedCategory: catVal
+      });
+
+      document.getElementById('modalDelayedLT').value = '';
+      document.getElementById('modalDelayedOrders').value = '';
+      document.getElementById('modalDelayedTOs').value = '';
+      document.getElementById('modalDelayedOrigin').value = '';
+      closeDelayedModal();
+    }
+
+    function upsertDelayedTrip(tripObj) {
+      const idx = manualDelayedTrips.findIndex(t => t.lt === tripObj.lt);
+      if (idx >= 0) {
+        manualDelayedTrips[idx] = tripObj;
+        showToast(`🚨 LT atrasada ${tripObj.lt} atualizada (${fmtNum(tripObj.orders)} ped.)!`);
+      } else {
+        manualDelayedTrips.push(tripObj);
+        showToast(`🚨 LT atrasada ${tripObj.lt} incluída (${fmtNum(tripObj.orders)} ped.)!`);
+      }
+      saveDelayedState();
+      applyFilters();
+    }
+
+    function removeDelayedTrip(lt) {
+      manualDelayedTrips = manualDelayedTrips.filter(t => t.lt !== lt);
+      receivedLTs.delete(lt);
+      selectedLTs.delete(lt);
+      saveDelayedState();
+      saveReceivedState();
+      applyFilters();
+      showToast(`LT atrasada ${lt} removida.`);
+    }
+
+    function clearManualDelayed() {
+      if (manualDelayedTrips.length === 0) {
+        showToast('Nenhuma LT atrasada manual para limpar.');
+        return;
+      }
+      manualDelayedTrips.forEach(t => {
+        receivedLTs.delete(t.lt);
+        selectedLTs.delete(t.lt);
+      });
+      manualDelayedTrips = [];
+      saveDelayedState();
+      saveReceivedState();
+      applyFilters();
+      showToast('Todas as LTs atrasadas manuais foram removidas.');
+    }
+
+    function processRows(rows) {
+      const destKeyword = (document.getElementById('destFilter').value || 'Recife').toLowerCase();
+      const grouped = {};
+
+      rows.forEach(r => {
+        const lt = (r['LH Trip Number'] || r['Número do LH'] || '').trim();
+        if (!lt) return;
+        if (!grouped[lt]) grouped[lt] = [];
+        grouped[lt].push(r);
+      });
+
+      const parsed = [];
+      Object.keys(grouped).forEach(lt => {
+        const stops = grouped[lt].sort((a, b) => (Number(a['Station Number']) || 0) - (Number(b['Station Number']) || 0));
+        const originStop = stops[0];
+        const destStop = stops.find(s => (s['Station Name'] || '').toLowerCase().includes(destKeyword)) || stops[stops.length - 1];
+
+        if (!destStop || !(destStop['Station Name'] || '').toLowerCase().includes(destKeyword)) return;
+
+        // Auto-mark received if Unloaded time is already recorded in CSV
+        const unloadedRaw = String(destStop['Unloaded time'] || '').trim();
+        if (unloadedRaw !== '' && unloadedRaw.toLowerCase() !== 'nan') {
+          receivedLTs.add(lt);
+          saveReceivedState();
+        }
+
+        const outOrdersOrigin = Number(originStop['Outbound(order)']) || 0;
+        const interInbound = stops
+          .filter(s => s !== originStop && s !== destStop)
+          .reduce((acc, s) => acc + (Number(s['Inbound(order)']) || 0), 0);
+        const destInbound = Number(destStop['Inbound(order)']) || 0;
+
+        const netOrders = Math.max(0, outOrdersOrigin - interInbound - destInbound);
+        const netTOs = parsePendingTO(destStop['Inbound(TO)'], Number(originStop['Outbound(TO)']) || 0);
+
+        const schedStr = String(destStop['Schedule Arrival Time'] || '').trim();
+        const schedISO = parseBRDateTime(schedStr);
+        if (!schedISO) return;
+
+        let originName = String(originStop['Station Name'] || '').trim();
+        if (originName.includes('São Bernardo')) originName += ' (SP-8)';
+        if (originName.includes('Nova Friburgo')) originName += ' (RJ-2)';
+
+        let statusObs = 'Em trânsito';
+        const actArr = String(destStop['Actual Arrival Time'] || '').trim();
+        if (actArr && actArr.toLowerCase() !== 'nan') {
+          statusObs = `No pátio (${actArr.split(' ')[1] || actArr})`;
+        } else if (interInbound > 0 || destInbound > 0) {
+          const notes = [];
+          if (interInbound > 0) notes.push(`Parada interm. (-${interInbound.toLocaleString('pt-BR')})`);
+          if (destInbound > 0) notes.push(`${destInbound.toLocaleString('pt-BR')} já bipados`);
+          statusObs = notes.join(' • ');
+        }
+
+        parsed.push({
+          lt,
+          origin: originName,
+          schedTime: schedISO,
+          schedStr,
+          tos: netTOs,
+          orders: netOrders,
+          status: statusObs,
+          isDelayed: false
+        });
+      });
+
+      baseTrips = parsed;
+      selectedLTs.clear();
+      applyFilters();
+    }
+
+    function classifyOrigin(trip) {
+      if (trip.forcedCategory) return trip.forcedCategory;
+      const kwList = (document.getElementById('transbordoKeywords').value || '')
+        .split(',')
+        .map(k => k.trim().toLowerCase())
+        .filter(Boolean);
+      const origLow = (trip.origin || '').toLowerCase();
+      return kwList.some(k => origLow.includes(k)) ? 'TRANSBORDO' : 'LMH';
+    }
+
+    // Selection & Received Status Handlers
+    function toggleRowSelect(lt, checked) {
+      if (checked) selectedLTs.add(lt);
+      else selectedLTs.delete(lt);
+      updateBulkBar();
+    }
+
+    function toggleSelectAll(checked) {
+      filteredTrips.forEach(t => {
+        if (checked) selectedLTs.add(t.lt);
+        else selectedLTs.delete(t.lt);
+      });
+      renderDashboard();
+    }
+
+    function updateBulkBar() {
+      const bar = document.getElementById('bulkActionBar');
+      const label = document.getElementById('selectedCountLabel');
+      const selectAllCb = document.getElementById('selectAllCheckbox');
+
+      if (selectedLTs.size > 0) {
+        bar.classList.remove('hidden');
+        bar.classList.add('flex');
+        label.textContent = `${selectedLTs.size} selecionada(s)`;
+      } else {
+        bar.classList.add('hidden');
+        bar.classList.remove('flex');
+      }
+
+      if (selectAllCb && filteredTrips.length > 0) {
+        const allVisibleSelected = filteredTrips.every(t => selectedLTs.has(t.lt));
+        selectAllCb.checked = allVisibleSelected;
+      } else if (selectAllCb) {
+        selectAllCb.checked = false;
+      }
+    }
+
+    function toggleSingleReceived(lt) {
+      if (receivedLTs.has(lt)) {
+        receivedLTs.delete(lt);
+        showToast(`LT ${lt} marcada como Pendente.`);
+      } else {
+        receivedLTs.add(lt);
+        showToast(`✅ LT ${lt} marcada como Recebida!`);
+      }
+      saveReceivedState();
+      applyFilters();
+    }
+
+    function bulkMarkReceived(markAsReceived) {
+      if (selectedLTs.size === 0) return;
+      const count = selectedLTs.size;
+      selectedLTs.forEach(lt => {
+        if (markAsReceived) receivedLTs.add(lt);
+        else receivedLTs.delete(lt);
+      });
+      selectedLTs.clear();
+      saveReceivedState();
+      applyFilters();
+      showToast(markAsReceived ? `✅ ${count} LT(s) marcada(s) como Recebida(s)!` : `↺ ${count} LT(s) retornada(s) para Pendente.`);
+    }
+
+    function clearAllReceived() {
+      receivedLTs.clear();
+      selectedLTs.clear();
+      saveReceivedState();
+      applyFilters();
+      showToast('Todos os status de recebimento foram limpos.');
+    }
+
+    function applyFilters() {
+      const startVal = document.getElementById('startWindow').value;
+      const endVal = document.getElementById('endWindow').value;
+      const typeVal = document.getElementById('typeFilter').value;
+      const statusVal = document.getElementById('statusFilter').value;
+
+      // Combine base trips + manual delayed trips (manual overrides if duplicate LT)
+      const combinedMap = new Map();
+      baseTrips.forEach(t => combinedMap.set(t.lt, { ...t, isDelayed: false }));
+      manualDelayedTrips.forEach(t => combinedMap.set(t.lt, { ...t, isDelayed: true }));
+
+      filteredTrips = Array.from(combinedMap.values())
+        .map(t => ({
+          ...t,
+          category: classifyOrigin(t),
+          isReceived: receivedLTs.has(t.lt)
+        }))
+        .filter(t => {
+          // Delayed LTs included manually are always visible unless filtered out by status/type
+          if (!t.isDelayed) {
+            if (startVal && t.schedTime < startVal) return false;
+            if (endVal && t.schedTime > endVal) return false;
+          }
+          if (typeVal !== 'ALL' && t.category !== typeVal) return false;
+          if (statusVal === 'RECEIVED' && !t.isReceived) return false;
+          if (statusVal === 'PENDING' && t.isReceived) return false;
+          if (statusVal === 'DELAYED' && !t.isDelayed) return false;
+          return true;
+        })
+        .sort((a, b) => a.schedTime.localeCompare(b.schedTime) || a.lt.localeCompare(b.lt));
+
+      renderDashboard();
+    }
+
+    function fmtNum(n) {
+      return Number(n || 0).toLocaleString('pt-BR');
+    }
+
+    function renderDashboard() {
+      const totalOrders = filteredTrips.reduce((s, t) => s + t.orders, 0);
+      const totalTOs = filteredTrips.reduce((s, t) => s + t.tos, 0);
+      const totalLTs = filteredTrips.length;
+
+      const recList = filteredTrips.filter(t => t.isReceived);
+      const pendList = filteredTrips.filter(t => !t.isReceived);
+
+      const recOrders = recList.reduce((s, t) => s + t.orders, 0);
+      const pendOrders = pendList.reduce((s, t) => s + t.orders, 0);
+      const recPctNum = totalOrders > 0 ? (recOrders / totalOrders) * 100 : 0;
+      const recPctStr = recPctNum.toFixed(1).replace('.', ',') + '%';
+
+      const delayedList = filteredTrips.filter(t => t.isDelayed);
+      const delayedOrders = delayedList.reduce((s, t) => s + t.orders, 0);
+      const delayedPendOrders = delayedList.filter(t => !t.isReceived).reduce((s, t) => s + t.orders, 0);
+      const delayedPctStr = totalOrders > 0 ? ((delayedOrders / totalOrders) * 100).toFixed(1).replace('.', ',') + '%' : '0,0%';
+
+      const lmhList = filteredTrips.filter(t => t.category === 'LMH');
+      const transList = filteredTrips.filter(t => t.category === 'TRANSBORDO');
+
+      const lmhOrders = lmhList.reduce((s, t) => s + t.orders, 0);
+      const lmhRecOrders = lmhList.filter(t => t.isReceived).reduce((s, t) => s + t.orders, 0);
+      const lmhOnTimePendOrders = lmhList.filter(t => !t.isReceived && !t.isDelayed).reduce((s, t) => s + t.orders, 0);
+
+      const transOrders = transList.reduce((s, t) => s + t.orders, 0);
+      const transRecOrders = transList.filter(t => t.isReceived).reduce((s, t) => s + t.orders, 0);
+      const transOnTimePendOrders = transList.filter(t => !t.isReceived && !t.isDelayed).reduce((s, t) => s + t.orders, 0);
+
+      const lmhPct = totalOrders > 0 ? ((lmhOrders / totalOrders) * 100).toFixed(1).replace('.', ',') + '%' : '0%';
+      const transPct = totalOrders > 0 ? ((transOrders / totalOrders) * 100).toFixed(1).replace('.', ',') + '%' : '0%';
+
+      // Top KPIs
+      document.getElementById('kpiTotalOrders').textContent = fmtNum(totalOrders);
+      document.getElementById('kpiTotalLTs').textContent = totalLTs;
+      document.getElementById('kpiTotalTOs').textContent = fmtNum(totalTOs);
+
+      document.getElementById('kpiRecOrders').textContent = fmtNum(recOrders);
+      document.getElementById('kpiRecPct').textContent = recPctStr;
+      document.getElementById('kpiRecLTs').textContent = recList.length;
+      document.getElementById('kpiRecTotalLTs').textContent = totalLTs;
+      document.getElementById('kpiPendOrders').textContent = fmtNum(pendOrders);
+
+      document.getElementById('kpiDelayedOrders').textContent = fmtNum(delayedOrders);
+      document.getElementById('kpiDelayedPct').textContent = delayedPctStr;
+      document.getElementById('kpiDelayedLTs').textContent = delayedList.length;
+
+      document.getElementById('kpiLmhOrders').textContent = fmtNum(lmhOrders);
+      document.getElementById('kpiLmhPct').textContent = lmhPct;
+      document.getElementById('kpiLmhLTs').textContent = lmhList.length;
+      document.getElementById('kpiLmhRecInfo').textContent = `${fmtNum(lmhRecOrders)} rec.`;
+
+      document.getElementById('kpiTransOrders').textContent = fmtNum(transOrders);
+      document.getElementById('kpiTransPct').textContent = transPct;
+      document.getElementById('kpiTransLTs').textContent = transList.length;
+      document.getElementById('kpiTransRecInfo').textContent = `${fmtNum(transRecOrders)} rec.`;
+
+      document.getElementById('kpiAvgOrders').textContent = totalLTs > 0 ? fmtNum(Math.round(totalOrders / totalLTs)) : '0';
+
+      // Progress Bar
+      document.getElementById('progressBadge').textContent = `${recPctStr} concluído`;
+      document.getElementById('barRecText').textContent = `${fmtNum(recOrders)} ped. (${recList.length} LTs)`;
+      document.getElementById('barDelayedText').textContent = `${fmtNum(delayedOrders)} ped. (${delayedList.length} LTs)`;
+      document.getElementById('barPendText').textContent = `${fmtNum(pendOrders)} ped. (${pendList.length} LTs)`;
+      document.getElementById('progressBarFill').style.width = `${Math.min(100, recPctNum)}%`;
+
+      // Doughnut Legend
+      document.getElementById('legendRec').textContent = `${fmtNum(recOrders)} ped.`;
+      document.getElementById('legendDelayed').textContent = `${fmtNum(delayedPendOrders)} ped.`;
+      document.getElementById('legendLmh').textContent = `${fmtNum(lmhOnTimePendOrders)} ped.`;
+      document.getElementById('legendTrans').textContent = `${fmtNum(transOnTimePendOrders)} ped.`;
+
+      // Header subtitle
+      const sFmt = document.getElementById('startWindow').value.replace('T', ' ').split('-').reverse().join('/');
+      const eFmt = document.getElementById('endWindow').value.replace('T', ' ').split('-').reverse().join('/');
+      document.getElementById('headerSubtitle').textContent = `Janela: ${sFmt} até ${eFmt} • Recebido: ${fmtNum(recOrders)} | Atrasadas: ${fmtNum(delayedOrders)} | Pendente: ${fmtNum(pendOrders)}`;
+
+      // Render Table
+      const tbody = document.getElementById('ltTableBody');
+      if (filteredTrips.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-slate-400">Nenhuma LT encontrada para a janela horária e filtros selecionados.</td></tr>`;
+      } else {
+        tbody.innerHTML = filteredTrips.map(t => {
+          const isSel = selectedLTs.has(t.lt);
+          const badge = t.category === 'TRANSBORDO'
+            ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">TRANSBORDO</span>`
+            : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">LMH</span>`;
+
+          const delayedTag = t.isDelayed
+            ? `<span class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-600 text-white uppercase tracking-wide">ATRASADA</span>`
+            : '';
+
+          const statusPill = t.isReceived
+            ? `<button onclick="toggleSingleReceived('${t.lt}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition cursor-pointer" title="Clique para voltar para Pendente">✅ Recebida</button>`
+            : `<button onclick="toggleSingleReceived('${t.lt}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 hover:bg-emerald-100 hover:text-emerald-800 border border-slate-300 transition cursor-pointer" title="Clique para marcar como Recebida">⏳ Pendente</button>`;
+
+          const shortTime = t.schedStr.length >= 16 ? t.schedStr.slice(0, 5) + ' ' + t.schedStr.slice(11, 16) : t.schedStr;
+          const rowClass = t.isReceived
+            ? 'row-received transition'
+            : (t.isDelayed ? 'row-delayed transition' : 'hover:bg-orange-50/40 transition');
+
+          const deleteAction = t.isDelayed
+            ? `<button onclick="removeDelayedTrip('${t.lt}')" class="text-red-500 hover:text-red-700 font-bold text-xs px-2 py-1 rounded hover:bg-red-100 transition" title="Remover LT atrasada manual">🗑️</button>`
+            : `<span class="text-slate-300 text-xs">—</span>`;
+
+          return `
+            <tr class="${rowClass}">
+              <td class="py-3 px-3 text-center no-print-pres">
+                <input type="checkbox" ${isSel ? 'checked' : ''} onchange="toggleRowSelect('${t.lt}', this.checked)" class="w-4 h-4 accent-[#EE4D2D] rounded cursor-pointer" />
+              </td>
+              <td class="py-3 px-3 text-center whitespace-nowrap">${statusPill}</td>
+              <td class="py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">${shortTime}</td>
+              <td class="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">${t.lt}${delayedTag}</td>
+              <td class="py-3 px-4 text-slate-700">${t.origin}</td>
+              <td class="py-3 px-4 text-center">${badge}</td>
+              <td class="py-3 px-4 text-right font-medium text-slate-600">${t.tos > 0 ? fmtNum(t.tos) : '-'}</td>
+              <td class="py-3 px-4 text-right font-extrabold ${t.isReceived ? 'text-emerald-700' : (t.isDelayed ? 'text-red-600' : 'text-slate-900')}">${fmtNum(t.orders)}</td>
+              <td class="py-3 px-4 text-xs text-slate-500">${t.isReceived ? 'Conferido / Recebido na Doca' : t.status}</td>
+              <td class="py-3 px-2 text-center no-print-pres">${deleteAction}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      document.getElementById('footTOs').textContent = fmtNum(totalTOs);
+      document.getElementById('footOrders').textContent = fmtNum(totalOrders);
+      document.getElementById('footSummary').textContent = `Recebido: ${fmtNum(recOrders)} | Atrasadas: ${fmtNum(delayedOrders)} | Pendente: ${fmtNum(pendOrders)}`;
+
+      updateBulkBar();
+      renderCharts(recOrders, delayedPendOrders, lmhOnTimePendOrders, transOnTimePendOrders);
+    }
+
+    function renderCharts(recTotal, delayedPendTotal, lmhOnTimePendTotal, transOnTimePendTotal) {
+      // Group by hour slot
+      const hourMap = {};
+      filteredTrips.forEach(t => {
+        const label = t.schedStr.slice(11, 16) || t.schedTime.slice(11, 16);
+        if (!hourMap[label]) hourMap[label] = { rec: 0, delayedPend: 0, lmhPend: 0, transPend: 0 };
+        if (t.isReceived) {
+          hourMap[label].rec += t.orders;
+        } else if (t.isDelayed) {
+          hourMap[label].delayedPend += t.orders;
+        } else if (t.category === 'TRANSBORDO') {
+          hourMap[label].transPend += t.orders;
+        } else {
+          hourMap[label].lmhPend += t.orders;
+        }
+      });
+
+      const labels = Object.keys(hourMap);
+      const recSeries = labels.map(l => hourMap[l].rec);
+      const delayedSeries = labels.map(l => hourMap[l].delayedPend);
+      const lmhSeries = labels.map(l => hourMap[l].lmhPend);
+      const transSeries = labels.map(l => hourMap[l].transPend);
+
+      // Find Peak Hour
+      let peakLabel = '-';
+      let peakVal = 0;
+      labels.forEach(l => {
+        const sum = hourMap[l].rec + hourMap[l].delayedPend + hourMap[l].lmhPend + hourMap[l].transPend;
+        if (sum > peakVal) { peakVal = sum; peakLabel = l; }
+      });
+      document.getElementById('kpiPeakHour').textContent = peakVal > 0 ? `${peakLabel} (${fmtNum(peakVal)})` : '-';
+
+      const textColor = isPresentation ? '#CBD5E1' : '#475569';
+      const gridColor = isPresentation ? 'rgba(148,163,184,0.15)' : 'rgba(226,232,240,0.8)';
+
+      if (hourlyChartInstance) hourlyChartInstance.destroy();
+      const ctx1 = document.getElementById('hourlyChart').getContext('2d');
+      hourlyChartInstance = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Recebido', data: recSeries, backgroundColor: '#10B981', borderRadius: 6 },
+            { label: 'LTs Atrasadas (Pend.)', data: delayedSeries, backgroundColor: '#DC2626', borderRadius: 6 },
+            { label: 'LMH (No Prazo)', data: lmhSeries, backgroundColor: '#2563EB', borderRadius: 6 },
+            { label: 'Transbordo (No Prazo)', data: transSeries, backgroundColor: '#F59E0B', borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: textColor, font: { weight: 'bold', size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => `${ctx.dataset.label}: ${fmtNum(ctx.raw)} pedidos`
+              }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: textColor }, grid: { display: false } },
+            y: { stacked: true, ticks: { color: textColor, callback: v => fmtNum(v) }, grid: { color: gridColor } }
+          }
+        }
+      });
+
+      if (mixChartInstance) mixChartInstance.destroy();
+      const ctx2 = document.getElementById('mixChart').getContext('2d');
+      mixChartInstance = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+          labels: ['Recebido', 'LTs Atrasadas (Pend.)', 'LMH (No Prazo)', 'Transbordo (No Prazo)'],
+          datasets: [{
+            data: [recTotal, delayedPendTotal, lmhOnTimePendTotal, transOnTimePendTotal],
+            backgroundColor: ['#10B981', '#DC2626', '#2563EB', '#F59E0B'],
+            borderWidth: 0,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '66%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => `${ctx.label}: ${fmtNum(ctx.raw)} pedidos`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // File Upload Handling (CSV & XLSX)
+    function handleFile(file) {
+      if (!file) return;
+      const ext = file.name.split('.').pop().toLowerCase();
+      document.getElementById('fileStatus').textContent = `⏳ Processando arquivo: ${file.name}...`;
+
+      if (ext === 'csv') {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            processRows(results.data);
+            document.getElementById('fileStatus').textContent = `✅ Arquivo carregado: ${file.name} (${filteredTrips.length} LTs consolidadas)`;
+          }
+        });
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const wb = XLSX.read(e.target.result, { type: 'binary' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+          processRows(json);
+          document.getElementById('fileStatus').textContent = `✅ Planilha carregada: ${file.name} (${filteredTrips.length} LTs consolidadas)`;
+        };
+        reader.readAsBinaryString(file);
+      }
+    }
+
+    document.getElementById('fileInput').addEventListener('change', e => handleFile(e.target.files[0]));
+
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('border-[#EE4D2D]', 'bg-orange-100'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-[#EE4D2D]', 'bg-orange-100'); });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('border-[#EE4D2D]', 'bg-orange-100');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    // Presentation Mode & Slides
+    function togglePresentation() {
+      isPresentation = !isPresentation;
+      document.body.classList.toggle('presentation-mode', isPresentation);
+      document.getElementById('slideNav').classList.toggle('hidden', !isPresentation);
+      document.getElementById('presIcon').textContent = isPresentation ? '✖️' : '🖥️';
+      document.getElementById('presLabel').textContent = isPresentation ? 'Sair da Apresentação' : 'Modo Apresentação';
+      if (isPresentation) setSlide(1);
+      else setSlide(0);
+      renderDashboard();
+    }
+
+    function setSlide(num) {
+      currentSlide = num;
+      const s1 = document.getElementById('slide1Container');
+      const s2 = document.getElementById('slide2Container');
+      [0, 1, 2].forEach(i => {
+        const btn = document.getElementById('tabSlide' + i);
+        if (btn) {
+          btn.className = i === num
+            ? 'px-4 py-1.5 rounded-lg text-xs font-bold bg-[#EE4D2D] text-white'
+            : 'px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600';
+        }
+      });
+      if (num === 1) { s1.classList.remove('hidden'); s2.classList.add('hidden'); }
+      else if (num === 2) { s1.classList.add('hidden'); s2.classList.remove('hidden'); }
+      else { s1.classList.remove('hidden'); s2.classList.remove('hidden'); }
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        closeDelayedModal();
+        if (isPresentation) togglePresentation();
+        return;
+      }
+      if (!isPresentation) return;
+      if (e.key === 'ArrowRight') setSlide(currentSlide === 1 ? 2 : 1);
+      if (e.key === 'ArrowLeft') setSlide(currentSlide === 2 ? 1 : 2);
+    });
+
+    function copyWhatsApp() {
+      const totalOrders = filteredTrips.reduce((s, t) => s + t.orders, 0);
+      const recList = filteredTrips.filter(t => t.isReceived);
+      const pendList = filteredTrips.filter(t => !t.isReceived);
+      const delayedList = filteredTrips.filter(t => t.isDelayed);
+
+      const recOrders = recList.reduce((s, t) => s + t.orders, 0);
+      const pendOrders = pendList.reduce((s, t) => s + t.orders, 0);
+      const delayedOrders = delayedList.reduce((s, t) => s + t.orders, 0);
+
+      const lmhList = filteredTrips.filter(t => t.category === 'LMH');
+      const transList = filteredTrips.filter(t => t.category === 'TRANSBORDO');
+      const lmhOrders = lmhList.reduce((s, t) => s + t.orders, 0);
+      const transOrders = transList.reduce((s, t) => s + t.orders, 0);
+
+      let txt = `🟠 *STATUS DE RECEBIMENTO — SoC_PE_Recife_04*
+`;
+      txt += `📦 *Total Previsto:* ${fmtNum(totalOrders)} pedidos (${filteredTrips.length} LTs)
+`;
+      txt += `✅ *Recebido:* ${fmtNum(recOrders)} pedidos (${recList.length} LTs)
+`;
+      if (delayedList.length > 0) {
+        txt += `🚨 *LTs Atrasadas Incluídas:* ${fmtNum(delayedOrders)} pedidos (${delayedList.length} LTs)
+`;
+      }
+      txt += `⏳ *Pendente:* ${fmtNum(pendOrders)} pedidos (${pendList.length} LTs)
+`;
+      txt += `🚛 *LMH:* ${fmtNum(lmhOrders)} ped. | 🔄 *Transbordo:* ${fmtNum(transOrders)} ped.
+
+`;
+      txt += `🕒 *Detalhamento por LT:*
+`;
+      filteredTrips.forEach(t => {
+        const hr = t.schedStr.slice(11, 16);
+        const icon = t.isReceived ? '✅' : (t.isDelayed ? '🚨' : '⏳');
+        const tag = t.isDelayed ? ' [ATRASADA]' : '';
+        txt += `${icon} ${hr} | ${t.lt} (${t.category})${tag}: *${fmtNum(t.orders)}* ped.
+`;
+      });
+
+      navigator.clipboard.writeText(txt);
+      showToast('Resumo executivo copiado para o WhatsApp!');
+    }
+
+    function loadSampleData() {
+      baseTrips = [...defaultData];
+      selectedLTs.clear();
+      document.getElementById('startWindow').value = '2026-11-19T22:00';
+      document.getElementById('endWindow').value = '2026-11-20T06:00';
+      document.getElementById('typeFilter').value = 'ALL';
+      document.getElementById('statusFilter').value = 'ALL';
+      applyFilters();
+    }
+
+    // Init
+    loadSampleData();
+  </script>
+</body>
+</html>
